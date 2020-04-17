@@ -1,0 +1,205 @@
+#include <iostream>
+#include <stdio.h>
+#include <string.h>
+#include <queue>
+
+using namespace std;
+
+static int const Resource_String_SIZE = 10000;//设置读取源文件的最大字符串长度为10000
+static char DefinitionTable[36][10] =
+{"\0","\0","\0",
+ "void","int","float","char","if","else","while","do","for","return","main",
+ "+","-","*","/","%",
+ "<","<=",">",">=","==","!=","&&","||","=",
+ "(",")","[","]","{","}",";","," };
+
+
+static void FilterResource(char RP[]); //编译预处理,过滤注释
+static int CheckChar(char);	//检查是否为数字,字母（包括'_'），或者界符等其他符号
+static int DetectLines(char RP[], int &Point);	 //检测行数并祛除无关字符（空格，回车，制表符等）
+static int SerachCode(char *_string, int BEGAIN = 0, int END = 35); //查找对应的种别码
+
+int main()
+{
+	char ResourceProject[Resource_String_SIZE] = { '\0' }; //存储源文件的字符串
+	queue<int> _ERRORS;  //错误列表
+	int Point = 0;	//调用指针
+	int line = 1;   //定义行
+	char ch;//读取字符
+	do
+	{
+		ch = getchar();
+		ResourceProject[Point++] = ch;
+
+	} while (ch != '#');
+	ResourceProject[--Point] = '\0';//去除标志符‘#’
+	FilterResource(ResourceProject);
+	Point = 0;
+	while (ResourceProject[Point] != '\0')
+	{
+		if (DetectLines(ResourceProject, Point))
+		{
+			line++;
+			cout << endl;
+			while (ResourceProject[Point] == ' ' || ResourceProject[Point] == '\t' || ResourceProject[Point] == '\n')
+				Point++;
+		}
+		if (ResourceProject[Point] == '\0') //由于之前指针发生变化，需重新检测是否到文末
+			break;
+		int type = CheckChar(ResourceProject[Point]);
+		if (type == 0)
+		{
+			int NUM = 1, SUM = 0;
+			while (CheckChar(ResourceProject[Point + NUM]) == 0)
+				NUM++;
+			if (CheckChar(ResourceProject[Point + NUM]) == 1)//计入错误
+			{
+				cout << "LexicalError,";
+				_ERRORS.push(line);
+				while (++Point && (ResourceProject[Point] != ' ' ||
+					CheckChar(ResourceProject[Point]) <= 1))
+					;
+			}
+			else
+			{
+				for (int i = NUM, j = 1; i != 0; i--)
+				{
+					SUM += (ResourceProject[Point + i - 1] - 48) * j;
+					j *= 10;
+				}
+				Point += NUM;
+				cout << "<2," << SUM << ">,";
+			}
+		}
+		else if (type == 1)
+		{
+			int sub = 1;
+			char token[10] = { '\0' };
+			token[0] = ResourceProject[Point];
+			while (++Point&&CheckChar(ResourceProject[Point]) <= 1)
+				token[sub++] = ResourceProject[Point];
+			int flag = SerachCode(token, 3, 13);
+			if (!flag)
+				cout << "<1," << token << ">,";
+			else
+				cout << "<" << flag << ",->,";
+		}
+		else if (type == 2)
+		{
+			char token[10] = { '\0' };
+			token[0] = ResourceProject[Point];
+			cout << "<" << SerachCode(token, 14, 18) << ",->,";
+			Point++;
+		}
+		else if (type == 3)
+		{
+			char token[10] = { '\0' };
+			token[0] = ResourceProject[Point];
+			cout << "<" << SerachCode(token, 28, 35) << ",->,";
+			Point++;
+		}
+		else if (type == 4)
+		{
+			char token[10] = { '\0' };
+			token[0] = ResourceProject[Point];
+			if (CheckChar(ResourceProject[Point + 1]) == 4)
+				token[1] = ResourceProject[++Point];
+			cout << "<" << SerachCode(token, 19, 27) << ",->,";
+			Point++;
+		}
+		else
+		{
+			cout << "<0,->,";
+			Point++;
+		}
+	}
+	if (!_ERRORS.empty())
+	{
+		cout << "LexicalError(s) on line(s) ";
+		while (!_ERRORS.empty())
+		{
+			cout << _ERRORS.front()<<',';
+			_ERRORS.pop();
+		}
+	}
+	return 0;
+}
+
+void FilterResource(char RP[])
+{
+	char tempString[Resource_String_SIZE] = { '\0' };
+	int Point = 0, Sub = 0;
+	while (RP[Point] != '\0')
+	{
+		if (RP[Point] == '/')
+		{
+			switch (RP[Point + 1])
+			{
+			case '/':
+				while (++Point && RP[Point] != '\0' && RP[Point] != '\n')
+					;
+				tempString[Sub++] = '\n';
+				++Point;
+				break;
+			case '*':
+				Point++;
+				while (++Point&&RP[Point + 1] != '\0' && (RP[Point] != '*' || RP[Point + 1] != '/'))
+					;
+				tempString[Sub++] = '\n';
+				if (RP[Point + 1] != '/')
+				{
+					strcpy(RP, tempString);
+					return;
+				}
+				Point+=2;
+				break;
+			default:
+				tempString[Sub++] = RP[Point++];
+			}
+		}
+		else
+			tempString[Sub++] = RP[Point++];
+	}
+	strcpy(RP,tempString);
+}
+
+int CheckChar(char ch)
+{
+	if (ch <= '9'&&ch >= '0')
+		return 0;//数字返回0
+	else if ((ch <= 'z'&&ch >= 'a') || (ch <= 'Z'&&ch >= 'A' )|| ch == '_')
+		return 1;//字母返回1
+	else if (ch == '+' || ch == '-' || ch == '*' || ch == '/' || ch == '%')
+		return 2;//单运算符返回2
+	else if (ch == '(' || ch == ')' || ch == '{' || ch == '}' ||
+		ch == '[' || ch == ']' || ch == ';' || ch == ',')
+		return 3;//界符返回3
+	else if (ch == '=' || ch == '|' || ch == '>' || ch == '<' || ch == '&' || ch == '!')
+		return 4;//需要向后检测的符号返回4
+	else
+		return 5;//未知返回5
+}
+
+int DetectLines(char RP[], int &Point)
+{
+	while (RP[Point] == ' ' || RP[Point] == '\t')
+		Point++;
+	if (RP[Point] == '\n')                    //检测行数
+	{
+		Point++;
+		return 1;
+	}
+	return 0;
+}
+
+int SerachCode(char *_string, int BEGAIN, int END )
+{
+	for (int i = BEGAIN; i <= END; i++)
+		if (strcmp(_string, DefinitionTable[i]) == 0)
+			return i;
+	return 0;
+}
+
+
+
+
